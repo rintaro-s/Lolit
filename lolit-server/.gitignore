@@ -1,0 +1,19 @@
+# Go binaries
+lolit-server
+*.exe
+
+# Go workspace
+vendor/
+
+# Environment variables
+.env
+.env.local
+
+# Data directories created at runtime
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+bleve.idx/
+previews/

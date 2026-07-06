@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lolit-kicad-plugin"
+version = "0.1.0"
+description = "Lolit KiCAD plugin for commit, diff, and lock integration"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "requests",
+    "sexpdata",
+]
+
+[project.scripts]
+lolit-kicad = "lolit_kicad_plugin.cli:main"

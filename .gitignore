@@ -1,0 +1,27 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Temporary directories
+tmp/
+temp/
+*.tmp
+
+# Reference repositories (not part of the product)
+InteractiveHtmlBom/
+SolidDNA/
+kicad-diff-visualizer/
+
+# Build artifacts
+/dist
+/build

@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模擬 Google ドライブ (ダークモード・UI最適化版)</title>
+    <style>
+        /* 全体のリセットと共通設定 */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Roboto', 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', sans-serif;
+        }
+
+        body {
+            background-color: #131314;
+            color: #e3e3e3;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* サイドバー */
+        .sidebar {
+            width: 250px;
+            background-color: #131314;
+            padding: 16px 12px;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding-left: 12px;
+            margin-bottom: 16px;
+            font-size: 22px;
+            font-weight: 400;
+        }
+        /* 簡易ロゴマーク（CSSで三角形を作成） */
+        .logo-shape {
+            width: 0;
+            height: 0;
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-bottom: 18px solid #4285F4;
+        }
+
+        .btn-new {
+            background-color: #282a2c;
+            color: #e3e3e3;
+            border: 1px solid #444746;
+            border-radius: 16px;
+            padding: 18px 24px;
+            font-size: 14px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            width: fit-content;
+            margin-bottom: 16px;
+            margin-left: 4px;
+        }
+        .btn-new:hover {
+            background-color: #333537;
+        }
+        .btn-new .plus-icon {
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .nav-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            color: #c4c7c5;
+            cursor: pointer;
+            text-decoration: none;
+            height: 40px;
+        }
+        .nav-item:hover {
+            background-color: #282a2c;
+        }
+        .nav-item.active {
+            background-color: #004a77;
+            color: #c2e7ff;
+            font-weight: bold;
+        }
+
+        /* アイコンの代わりとなるダミースペース（本来はSVGが入る場所） */
+        .nav-icon-placeholder {
+            width: 24px;
+            display: inline-block;
+        }
+
+        .divider {
+            height: 1px;
+            background-color: #444746;
+            margin: 12px 0;
+        }
+
+        .storage-section {
+            margin-top: auto;
+            padding: 0 12px;
+            font-size: 12px;
+            color: #c4c7c5;
+        }
+        .storage-bar-bg {
+            background-color: #444746;
+            height: 4px;
+            border-radius: 2px;
+            margin: 8px 0;
+            overflow: hidden;
+        }
+        .storage-bar-fill {
+            background-color: #a8c7fa;
+            width: 89%;
+            height: 100%;
+        }
+        .btn-storage {
+            background: none;
+            border: 1px solid #747775;
+            color: #a8c7fa;
+            border-radius: 20px;
+            padding: 6px 16px;
+            font-size: 12px;
+            cursor: pointer;
+            margin-top: 8px;
+        }
+
+        /* メインコンテンツエリア */
+        .main-container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: #1e1f20;
+            margin: 16px 16px 16px 0;
+            border-radius: 24px;
+            overflow: hidden;
+        }
+
+        /* ヘッダー/検索バー */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 24px;
+            background-color: #1e1f20;
+        }
+
+        .search-bar {
+            display: flex;
+            align-items: center;
+            background-color: #2d2f31;
+            border-radius: 30px;
+            padding: 0 20px;
+            width: 60%;
+            max-width: 720px;
+            height: 48px;
+        }
+        /* 虫眼鏡アイコンをCSSで表現 */
+        .search-icon {
+            width: 14px;
+            height: 14px;
+            border: 2px solid #c4c7c5;
+            border-radius: 50%;
+            position: relative;
+            margin-right: 8px;
+        }
+        .search-icon::after {
+            content: '';
+            position: absolute;
+            width: 2px;
+            height: 6px;
+            background-color: #c4c7c5;
+            transform: rotate(-45deg);
+            top: 10px;
+            left: 10px;
+        }
+        .search-bar input {
+            background: none;
+            border: none;
+            color: #e3e3e3;
+            width: 100%;
+            padding: 0 12px;
+            font-size: 16px;
+            outline: none;
+        }
+        .filter-icon {
+            color: #c4c7c5;
+            cursor: pointer;
+            font-size: 18px;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .icon-btn-text {
+            background: none;
+            border: none;
+            color: #c4c7c5;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .btn-upgrade {
+            background-color: #0b57d0;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        /* スクロール可能なコンテンツ本体 */
+        .content-body {
+            padding: 0 24px 24px 24px;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+
+        .title-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 8px;
+            margin-bottom: 24px;
+        }
+        .title-section h1 {
+            font-size: 24px;
+            font-weight: 400;
+        }
+        .info-icon {
+            width: 18px;
+            height: 18px;
+            border: 2px solid #c4c7c5;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: bold;
+            color: #c4c7c5;
+            cursor: pointer;
+        }
+
+        .section-title {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 12px;
+            color: #e3e3e3;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .arrow-down {
+            font-size: 10px;
+            color: #c4c7c5;
+        }
+
+        /* フォルダ候補グリッド (フォルダマークは絵文字のまま) */
+        .folder-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 12px;
+            margin-bottom: 32px;
+        }
+        .folder-card {
+            background-color: #282a2c;
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            position: relative;
+            cursor: pointer;
+        }
+        .folder-card:hover {
+            background-color: #333537;
+        }
+        .folder-info {
+            overflow: hidden;
+        }
+        .folder-name {
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .folder-sub {
+            font-size: 12px;
+            color: #9e9e9e;
+            margin-top: 2px;
+        }
+        .more-options {
+            position: absolute;
+            right: 12px;
+            color: #c4c7c5;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        /* リスト表示切り替えヘッダー */
+        .list-header-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .view-toggle-box {
+            display: flex;
+            background-color: #282a2c;
+            border-radius: 20px;
+            padding: 2px;
+            border: 1px solid #444746;
+        }
+        .toggle-btn {
+            background: none;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 16px;
+            color: #c4c7c5;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .toggle-btn.active {
+            background-color: #004a77;
+            color: #c2e7ff;
+        }
+
+        /* ファイルリスト（テーブル） */
+        .file-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        .file-table th {
+            text-align: left;
+            color: #c4c7c5;
+            font-weight: 400;
+            padding: 10px 8px;
+            border-bottom: 1px solid #444746;
+            font-size: 12px;
+        }
+        .file-table td {
+            padding: 12px 8px;
+            border-bottom: 1px solid #333537;
+            vertical-align: middle;
+            color: #e3e3e3;
+        }
+        .file-table tr:hover td {
+            background-color: #282a2c;
+            cursor: pointer;
+        }
+
+        .file-name-cell {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 500;
+        }
+        .icon-type {
+            font-size: 16px;
+        }
+        .icon-orange { color: #f86734; }
+        .icon-red { color: #ea4335; }
+        .icon-blue { color: #4285f4; }
+
+        .share-mark {
+            font-size: 12px;
+            color: #9e9e9e;
+            margin-left: 4px;
+        }
+
+        .avatar-cell {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .avatar {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background-color: #555;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            color: white;
+        }
+        .avatar.pink { background-color: #c2185b; }
+
+        .more-text {
+            color: #a8c7fa;
+            font-size: 14px;
+            font-weight: 500;
+            margin-top: 16px;
+            display: inline-block;
+            cursor: pointer;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 左側サイドバー -->
+    <div class="sidebar">
+        <div class="logo-area">
+            <div class="logo-shape"></div>
+            <span>ドライブ</span>
+        </div>
+
+        <button class="btn-new">
+            <span class="plus-icon">+</span> 新規
+        </button>
+
+        <ul class="nav-list">
+            <li><a href="#" class="nav-item active"><span class="nav-icon-placeholder"></span> ホーム</a></li>
+            <li><a href="#" class="nav-item"><span class="nav-icon-placeholder"></span> マイドライブ</a></li>
+            <li><a href="#" class="nav-item"><span class="nav-icon-placeholder"></span> パソコン</a></li>
+            <div class="divider"></div>
+            <li><a href="#" class="nav-item"><span class="nav-icon-placeholder"></span> 共有アイテム</a></li>
+            <li><a href="#" class="nav-item"><span class="nav-icon-placeholder"></span> 最近使用したアイテム</a></li>
+            <li><a href="#" class="nav-item"><span class="nav-icon-placeholder"></span> スター付き</a></li>
+            <div class="divider"></div>
+            <li><a href="#" class="nav-item"><span class="nav-icon-placeholder"></span> スパム</a></li>
+            <li><a href="#" class="nav-item"><span class="nav-icon-placeholder"></span> ゴミ箱</a></li>
+            <li><a href="#" class="nav-item"><span class="nav-icon-placeholder"></span> 保存容量 (89% を使用中...</a></li>
+        </ul>
+
+        <!-- 容量メーター -->
+        <div class="storage-section">
+            <div class="storage-bar-bg">
+                <div class="storage-bar-fill"></div>
+            </div>
+            <div>15 GB 中 13.46 GB を使用</div>
+            <button class="btn-storage">保存容量を増やす</button>
+        </div>
+    </div>
+
+    <!-- 右側 メインコンテナ -->
+    <div class="main-container">
+        <!-- 上部ヘッダー -->
+        <div class="header">
+            <div class="search-bar">
+                <div class="search-icon"></div>
+                <input type="text" placeholder="ドライブで検索">
+                <span class="filter-icon">⚙</span>
+            </div>
+            <div class="header-actions">
+                <button class="icon-btn-text">?</button>
+                <button class="icon-btn-text">⚙</button>
+                <button class="icon-btn-text">✦</button>
+                <button class="btn-upgrade">アップグ...</button>
+            </div>
+        </div>
+
+        <!-- スクロール可能なメインコンテンツ -->
+        <div class="content-body">
+            <div class="title-section">
+                <h1>ドライブへようこそ</h1>
+                <div class="info-icon">i</div>
+            </div>
+
+            <!-- フォルダの候補 -->
+            <div class="section-title">
+                <span class="arrow-down">▼</span> フォルダの候補
+            </div>
+            <div class="folder-grid">
+                <div class="folder-card">
+                    <span style="font-size: 20px;">📁</span>
+                    <div class="folder-info">
+                        <div class="folder-name">共有</div>
+                        <div class="folder-sub">マイドライブ</div>
+                    </div>
+                    <span class="more-options">⋮</span>
+                </div>
+                <div class="folder-card">
+                    <span style="font-size: 20px;">📁</span>
+                    <div class="folder-info">
+                        <div class="folder-name">2次出場者向け資料</div>
+                        <div class="folder-sub">共有アイテム</div>
+                    </div>
+                    <span class="more-options">⋮</span>
+                </div>
+                <div class="folder-card">
+                    <span style="font-size: 20px;">📁</span>
+                    <div class="folder-info">
+                        <div class="folder-name">2026未踏</div>
+                        <div class="folder-sub">共有アイテム</div>
+                    </div>
+                    <span class="more-options">⋮</span>
+                </div>
+                <div class="folder-card">
+                    <span style="font-size: 20px;">📁</span>
+                    <div class="folder-info">
+                        <div class="folder-name">Spiberry Demo</div>
+                        <div class="folder-sub">共有アイテム</div>
+                    </div>
+                    <span class="more-options">⋮</span>
+                </div>
+            </div>
+
+            <!-- ファイルの候補 -->
+            <div class="list-header-actions">
+                <div class="section-title" style="margin-bottom: 0;">
+                    <span class="arrow-down">▼</span> ファイルの候補
+                </div>
+                <div class="view-toggle-box">
+                    <button class="toggle-btn active">✓ ☰</button>
+                    <button class="toggle-btn">⊞</button>
+                </div>
+            </div>
+
+            <!-- ファイルリストテーブル -->
+            <table class="file-table">
+                <thead>
+                    <tr>
+                        <th style="width: 40%;">名前</th>
+                        <th style="width: 25%;">提案された理由</th>
+                        <th style="width: 15%;">オーナー</th>
+                        <th style="width: 15%;">場所</th>
+                        <th style="width: 5%;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>
+                            <div class="file-name-cell">
+                                <span class="icon-type icon-orange">∞</span>
+                                <span>Untitled3.ipynb</span>
+                            </div>
+                        </td>
+                        <td style="color: #9e9e9e;">あなたが編集しました • 7月1日</td>
+                        <td>
+                            <div class="avatar-cell">
+                                <div class="avatar">自</div>
+                                <span>自分</span>
+                            </div>
+                        </td>
+                        <td style="color: #9e9e9e;">📁 Colab Notebooks</td>
+                        <td style="text-align: right; color: #c4c7c5;">⋮</td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <div class="file-name-cell">
+                                <span class="icon-type icon-orange">📊</span>
+                                <span>プロジェクトキックオフ (1).pptx <span class="share-mark">👥</span></span>
+                            </div>
+                        </td>
+                        <td style="color: #9e9e9e;">閲覧したファイル • 6月18日</td>
+                        <td>
+                            <div class="avatar-cell">
+                                <div class="avatar">自</div>
+                                <span>自分</span>
+                            </div>
+                        </td>
+                        <td style="color: #9e9e9e;">📁 共有</td>
+                        <td style="text-align: right; color: #c4c7c5;">⋮</td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <div class="file-name-cell">
+                                <span class="icon-type icon-blue">📄</span>
+                                <span>アプリ甲子園2025_2次選考会当日ご案内</span>
+                            </div>
+                        </td>
+                        <td style="color: #9e9e9e;">閲覧したファイル • 6月18日</td>
+                        <td>
+                            <div class="avatar-cell">
+                                <div class="avatar">自</div>
+                                <span>自分</span>
+                            </div>
+                        </td>
+                        <td style="color: #9e9e9e;">📁 マイドライブ</td>
+                        <td style="text-align: right; color: #c4c7c5;">⋮</td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <div class="file-name-cell">
+                                <span class="icon-type icon-orange">∞</span>
+                                <span>Untitled2.ipynb</span>
+                            </div>
+                        </td>
+                        <td style="color: #9e9e9e;">あなたが編集しました • 7月1日</td>
+                        <td>
+                            <div class="avatar-cell">
+                                <div class="avatar">自</div>
+                                <span>自分</span>
+                            </div>
+                        </td>
+                        <td style="color: #9e9e9e;">📁 Colab Notebooks</td>
+                        <td style="text-align: right; color: #c4c7c5;">⋮</td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <div class="file-name-cell">
+                                <span class="icon-type icon-red">📕</span>
+                                <span>_コピー.pdf</span>
+                            </div>
+                        </td>
+                        <td style="color: #9e9e9e;">自分がアップロードしたファイル • 7月2日</td>
+                        <td>
+                            <div class="avatar-cell">
+                                <div class="avatar">自</div>
+                                <span>自分</span>
+                            </div>
+                        </td>
+                        <td style="color: #9e9e9e;">📁 マイドライブ</td>
+                        <td style="text-align: right; color: #c4c7c5;">⋮</td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <div class="file-name-cell">
+                                <span class="icon-type icon-red">📕</span>
+                                <span>テーマ1_Arsist_滋野琳太郎.pdf <span class="share-mark">👥</span></span>
+                            </div>
+                        </td>
+                        <td style="color: #9e9e9e;">閲覧したファイル • 6月4日</td>
+                        <td>
+                            <div class="avatar-cell">
+                                <div class="avatar pink">2</div>
+                                <span>24239@toba-cmt.ac.jp</span>
+                            </div>
+                        </td>
+                        <td style="color: #9e9e9e;">📁 2026未踏</td>
+                        <td style="text-align: right; color: #c4c7c5;">⋮</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <a href="#" class="more-text">もっと見る</a>
+        </div>
+    </div>
+
+</body>
+</html>

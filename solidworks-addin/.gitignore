@@ -1,0 +1,18 @@
+# Build outputs
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.user
+*.userosscache
+*.suo
+*.cache
+
+# NuGet
+*.nupkg
+packages/
+
+# ReSharper
+_ReSharper*/
+*.ReSharper*

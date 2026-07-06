@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ja" x-data="lolit()" x-init="initApp()">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lolit Drive</title>
+    <link rel="stylesheet" href="/static/app.css">
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
+</head>
+<body>
+    <!-- サイドバー -->
+    <aside class="sidebar">
+        <div class="logo-area">
+            <div class="logo-shape"></div>
+            <span>Lolit</span>
+        </div>
+
+        <button class="btn-new" @click="showUpload = true">
+            <span class="plus-icon">+</span> 新規
+        </button>
+
+        <nav>
+            <ul class="nav-list">
+                <li><a href="#" class="nav-item" :class="{active: page === 'dashboard'}" @click.prevent="page = 'dashboard'">
+                    <span class="nav-icon-placeholder"></span> ホーム</a></li>
+                <li><a href="#" class="nav-item" :class="{active: page === 'files'}" @click.prevent="page = 'files'">
+                    <span class="nav-icon-placeholder"></span> マイドライブ</a></li>
+                <li><a href="#" class="nav-item" :class="{active: page === 'locks'}" @click.prevent="page = 'locks'">
+                    <span class="nav-icon-placeholder"></span> ロック中</a></li>
+                <div class="divider"></div>
+                <li><a href="#" class="nav-item" :class="{active: page === 'history'}" @click.prevent="page = 'history'">
+                    <span class="nav-icon-placeholder"></span> 履歴</a></li>
+                <li><a href="#" class="nav-item" :class="{active: page === 'releases'}" @click.prevent="page = 'releases'">
+                    <span class="nav-icon-placeholder"></span> リリース</a></li>
+                <li><a href="#" class="nav-item" :class="{active: page === 'search'}" @click.prevent="page = 'search'">
+                    <span class="nav-icon-placeholder"></span> 検索</a></li>
+            </ul>
+        </nav>
+
+        <div class="storage-section">
+            <div class="storage-bar-bg"><div class="storage-bar-fill" :style="{width: usagePercent + '%'}"></div></div>
+            <div x-text="storageText"></div>
+            <button class="btn-storage">容量を確認</button>
+        </div>
+    </aside>
+
+    <!-- メイン -->
+    <main class="main-container">
+        <header class="header">
+            <div class="search-bar">
+                <div class="search-icon"></div>
+                <input type="text" placeholder="Lolitで検索" x-model="query" @keydown.enter="doSearch">
+                <button class="filter-icon" @click="doSearch">検索</button>
+            </div>
+            <div class="header-actions">
+                <span x-text="repo" class="repo-label"></span>
+                <button class="icon-btn-text" title="ヘルプ">?</button>
+                <button class="icon-btn-text" title="設定" @click="showSettings = true">⚙</button>
+                <button class="btn-upgrade" @click="showUpload = true">アップロード</button>
+            </div>
+        </header>
+
+        <div class="content-body">
+            <!-- Dashboard -->
+            <section x-show="page === 'dashboard'" x-transition>
+                <div class="title-section">
+                    <h1>Lolit ホーム</h1>
+                    <div class="info-icon" title="最近の活動とロック状況">i</div>
+                </div>
+                <div class="section-title"><span class="arrow-down">▼</span> 最近のコミット</div>
+                <div class="file-table-wrap">
+                    <table class="file-table">
+                        <thead><tr><th>コミット</th><th>作者</th><th>メッセージ</th></tr></thead>
+                        <tbody>
+                            <template x-for="c in dashboard.commits" :key="c.hash">
+                                <tr>
+                                    <td><code x-text="c.hash.substring(0,8)"></code></td>
+                                    <td x-text="c.author"></td>
+                                    <td x-text="c.message"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="section-title" style="margin-top:24px"><span class="arrow-down">▼</span> ロック中ファイル数</div>
+                <p x-text="dashboard.lock_count + ' ファイル'" class="big-number"></p>
+            </section>
+
+            <!-- Files -->
+            <section x-show="page === 'files'" x-transition>
+                <div class="title-section">
+                    <h1>マイドライブ</h1>
+                    <div class="info-icon" title="リポジトリ内のファイル">i</div>
+                </div>
+                <div class="breadcrumb" x-text="currentPath || '/'"></div>
+                <div class="list-header-actions">
+                    <div class="section-title" style="margin-bottom:0"><span class="arrow-down">▼</span> ファイル</div>
+                    <div class="view-toggle-box">
+                        <button class="toggle-btn" :class="{active: view === 'list'}" @click="view='list'">☰ リスト</button>
+                        <button class="toggle-btn" :class="{active: view === 'grid'}" @click="view='grid'">⊞ グリッド</button>
+                    </div>
+                </div>
+                <div class="file-table-wrap">
+                    <table class="file-table">
+                        <thead>
+                            <tr><th>名前</th><th>種別</th><th>最新コミット</th><th>ロック</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="f in files" :key="f.id">
+                                <tr @click="openFile(f)">
+                                    <td>
+                                        <div class="file-name-cell">
+                                            <span class="icon-type" :class="iconClass(f.file_type)" x-text="iconFor(f.file_type)"></span>
+                                            <span x-text="f.path"></span>
+                                        </div>
+                                    </td>
+                                    <td x-text="f.file_type"></td>
+                                    <td><code x-text="(f.latest_commit||'').substring(0,8)"></code></td>
+                                    <td>
+                                        <span x-show="f.locked_by" class="lock-badge" x-text="'🔒 ' + f.locked_by"></span>
+                                        <span x-show="!f.locked_by" class="unlock-badge">解除</span>
+                                    </td>
+                                    <td style="text-align:right" @click.stop="toggleLock(f)">
+                                        <button class="action-btn" x-text="f.locked_by ? '解除' : 'ロック'" :class="{danger: f.locked_by}"></button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                <p x-show="files.length === 0" class="empty">ファイルがありません。CLI または Gitea から push してください。</p>
+            </section>
+
+            <!-- Locks -->
+            <section x-show="page === 'locks'" x-transition>
+                <div class="title-section"><h1>ロック中ファイル</h1></div>
+                <div class="file-table-wrap">
+                    <table class="file-table">
+                        <thead><tr><th>ファイル</th><th>リポジトリ</th><th>ユーザー</th><th></th></tr></thead>
+                        <tbody>
+                            <template x-for="f in locks" :key="f.id">
+                                <tr>
+                                    <td x-text="f.path"></td>
+                                    <td x-text="f.repo"></td>
+                                    <td x-text="f.locked_by"></td>
+                                    <td style="text-align:right"><button class="action-btn danger" @click="forceUnlock(f)">強制解除</button></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- History -->
+            <section x-show="page === 'history'" x-transition>
+                <div class="title-section"><h1>履歴</h1></div>
+                <div class="file-table-wrap">
+                    <table class="file-table">
+                        <thead><tr><th>コミット</th><th>作者</th><th>日時</th><th>メッセージ</th></tr></thead>
+                        <tbody>
+                            <template x-for="c in commits" :key="c.hash">
+                                <tr><td><code x-text="c.hash.substring(0,8)"></code></td><td x-text="c.author"></td><td x-text="formatTime(c.ts)"></td><td x-text="c.message"></td></tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Releases -->
+            <section x-show="page === 'releases'" x-transition>
+                <div class="title-section"><h1>リリース</h1><button class="action-btn" @click="showRelease = true">新規リリース</button></div>
+                <div class="file-table-wrap">
+                    <table class="file-table">
+                        <thead><tr><th>タグ</th><th>コミット</th><th>メモ</th><th>日時</th></tr></thead>
+                        <tbody>
+                            <template x-for="r in releases" :key="r.tag">
+                                <tr><td x-text="r.tag"></td><td><code x-text="r.commit_hash.substring(0,8)"></code></td><td x-text="r.note"></td><td x-text="formatTime(r.ts)"></td></tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Search -->
+            <section x-show="page === 'search'" x-transition>
+                <div class="title-section"><h1>検索結果</h1></div>
+                <p class="result-count" x-show="searchResults.length" x-text="searchResults.length + ' 件見つかりました'"></p>
+                <div class="file-table-wrap">
+                    <table class="file-table">
+                        <thead><tr><th>ファイル</th><th>種別</th><th>スコア</th></tr></thead>
+                        <tbody>
+                            <template x-for="h in searchResults" :key="h.id">
+                                <tr><td x-text="h.id"></td><td x-text="h.fields?.type"></td><td x-text="h.score.toFixed(2)"></td></tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Modals -->
+    <div class="modal" x-show="showUpload" x-transition @click.self="showUpload = false">
+        <div class="modal-card">
+            <h2>アップロード</h2>
+            <p>rv CLI または Git/Gitea を使用して push してください。</p>
+            <pre><code>rv push</code></pre>
+            <button class="action-btn" @click="showUpload = false">閉じる</button>
+        </div>
+    </div>
+
+    <div class="modal" x-show="showSettings" x-transition @click.self="showSettings = false">
+        <div class="modal-card">
+            <h2>設定</h2>
+            <label>リポジトリ名 (owner/repo)</label>
+            <input type="text" x-model="repo" class="text-input">
+            <label>ユーザー名</label>
+            <input type="text" x-model="user" class="text-input">
+            <button class="action-btn" @click="saveSettings">保存</button>
+        </div>
+    </div>
+
+    <div class="modal" x-show="showRelease" x-transition @click.self="showRelease = false">
+        <div class="modal-card">
+            <h2>新規リリース</h2>
+            <label>タグ</label>
+            <input type="text" x-model="newRelease.tag" class="text-input" placeholder="v1.0">
+            <label>コミット</label>
+            <input type="text" x-model="newRelease.commit" class="text-input" placeholder="abc123">
+            <label>メモ</label>
+            <input type="text" x-model="newRelease.note" class="text-input">
+            <button class="action-btn" @click="createRelease">作成</button>
+        </div>
+    </div>
+
+    <!-- File detail panel -->
+    <div class="drawer" :class="{open: selectedFile}">
+        <template x-if="selectedFile">
+            <div>
+                <div class="drawer-header">
+                    <h3 x-text="selectedFile.path"></h3>
+                    <button class="icon-btn-text" @click="selectedFile = null">×</button>
+                </div>
+                <p x-text="selectedFile.file_type" class="drawer-type"></p>
+                <p>最新: <code x-text="(selectedFile.latest_commit||'').substring(0,8)"></code></p>
+                <p x-show="selectedFile.locked_by" x-text="'🔒 ' + selectedFile.locked_by"></p>
+                <div x-show="fileDetail.kicad_diff">
+                    <h4>KiCAD 差分</h4>
+                    <pre class="diff-box" x-text="fileDetail.kicad_diff"></pre>
+                </div>
+                <div x-show="fileDetail.sw_metadata">
+                    <h4>SolidWorks メタデータ</h4>
+                    <pre class="diff-box" x-text="JSON.stringify(fileDetail.sw_metadata, null, 2)"></pre>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

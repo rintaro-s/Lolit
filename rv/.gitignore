@@ -1,0 +1,10 @@
+# Go binaries
+rv
+rv.exe
+
+# Go workspace
+vendor/
+
+# Environment variables
+.env
+.env.local

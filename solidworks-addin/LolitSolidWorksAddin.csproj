@@ -16,4 +16,10 @@
     <!-- net48 has no built-in System.Text.Json; it must be referenced explicitly. -->
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- Needed to extract the version-bundle zip downloaded from Lolit. -->
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
 </Project>

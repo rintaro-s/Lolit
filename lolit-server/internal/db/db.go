@@ -98,6 +98,24 @@ CREATE TABLE IF NOT EXISTS users (
     created_at INTEGER
 );
 
+-- dependencies records, for an assembly (or sub-assembly) saved at a given
+-- version, exactly which other file+version pairs it needs to open
+-- correctly (e.g. a SolidWorks assembly's referenced parts). Recorded by
+-- the client (SolidWorks Add-in) at save time, since only the client can
+-- read the assembly's own component tree. This is what lets Lolit hand back
+-- a self-consistent bundle for "this module at this version", the same way
+-- a lockfile pins transitive versions.
+CREATE TABLE IF NOT EXISTS dependencies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo TEXT NOT NULL,
+    path TEXT NOT NULL,
+    version TEXT NOT NULL,
+    dep_path TEXT NOT NULL,
+    dep_version TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_dependencies_lookup ON dependencies(repo, path, version);
+
 CREATE INDEX IF NOT EXISTS idx_files_repo ON files(repo);
 CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
 CREATE INDEX IF NOT EXISTS idx_commits_repo ON commits(repo);
@@ -396,6 +414,56 @@ func (s *Store) SetUserRole(id int64, role string) error {
 func (s *Store) DeleteUser(id int64) error {
 	_, err := s.db.Exec(`DELETE FROM users WHERE id=?`, id)
 	return err
+}
+
+// Dependency is one edge: `path` at `version` requires `dep_path` at
+// exactly `dep_version` to open correctly.
+type Dependency struct {
+	Path       string `json:"path"`
+	Version    string `json:"version"`
+	DepPath    string `json:"dep_path"`
+	DepVersion string `json:"dep_version"`
+}
+
+// SaveDependencies replaces the recorded dependency edges for (repo, path,
+// version) -- a re-save of the same version fully overwrites the previous
+// edge list, since the whole point is "this is the exact reference graph as
+// of this version" and stale extra edges would corrupt bundle resolution.
+func (s *Store) SaveDependencies(repo, path, version string, deps []Dependency) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM dependencies WHERE repo=? AND path=? AND version=?`, repo, path, version); err != nil {
+		return err
+	}
+	for _, d := range deps {
+		if _, err := tx.Exec(`INSERT INTO dependencies (repo, path, version, dep_path, dep_version) VALUES (?, ?, ?, ?, ?)`,
+			repo, path, version, d.DepPath, d.DepVersion); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// GetDependencies returns the direct dependency edges recorded for (repo,
+// path, version).
+func (s *Store) GetDependencies(repo, path, version string) ([]Dependency, error) {
+	rows, err := s.db.Query(`SELECT path, version, dep_path, dep_version FROM dependencies WHERE repo=? AND path=? AND version=?`, repo, path, version)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Dependency
+	for rows.Next() {
+		var d Dependency
+		if err := rows.Scan(&d.Path, &d.Version, &d.DepPath, &d.DepVersion); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }
 
 // Exec exposes raw exec for migrations/tests.

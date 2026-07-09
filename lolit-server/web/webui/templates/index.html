@@ -325,8 +325,13 @@
                     <button class="icon-btn-text" @click="selectedFile = null">×</button>
                 </div>
                 <p x-text="selectedFile.file_type" class="drawer-type"></p>
-                <p>最新コミット: <code x-text="(selectedFile.latest_commit||'').substring(0,8)"></code></p>
+                <p>最新バージョン: <code x-text="(selectedFile.latest_commit||'').substring(0,8)"></code></p>
                 <p x-show="selectedFile.locked_by" x-text="'🔒 ' + selectedFile.locked_by"></p>
+
+                <div class="drawer-section" style="display:flex; gap:8px;">
+                    <button class="action-btn" @click="downloadVersion(selectedFile.path, selectedFile.latest_commit)">最新版をダウンロード</button>
+                    <button class="action-btn" x-show="selectedFile.file_type === 'sldasm'" @click="downloadBundle(selectedFile.path, selectedFile.latest_commit)">関連部品も含めてダウンロード</button>
+                </div>
 
                 <template x-if="parsedKicadDiff()">
                     <div class="drawer-section">
@@ -353,12 +358,15 @@
                 </template>
 
                 <div class="drawer-section">
-                    <h4>このファイルの履歴</h4>
+                    <h4>このファイルのバージョン履歴</h4>
                     <ul class="history-list">
                         <template x-for="c in fileHistory" :key="c.hash">
-                            <li>
-                                <div class="history-msg" x-text="c.message"></div>
-                                <div class="history-meta"><code class="history-hash" x-text="c.hash.substring(0,8)"></code> · <span x-text="c.author"></span> · <span x-text="formatTime(c.ts)"></span></div>
+                            <li style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                <div>
+                                    <div class="history-msg" x-text="c.message"></div>
+                                    <div class="history-meta"><code class="history-hash" x-text="c.hash.substring(0,8)"></code> · <span x-text="c.author"></span> · <span x-text="formatTime(c.ts)"></span></div>
+                                </div>
+                                <button class="action-btn small" @click="downloadVersion(selectedFile.path, c.hash)">DL</button>
                             </li>
                         </template>
                     </ul>

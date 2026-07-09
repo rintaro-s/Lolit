@@ -50,6 +50,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	protected.HandleFunc("/api/kicad-diff", h.handleKiCadDiff)
 	protected.HandleFunc("/api/history", h.handleHistory)
 	protected.HandleFunc("/api/upload", h.handleUpload)
+	protected.HandleFunc("/api/dependencies", h.handleDependencies)
+	protected.HandleFunc("/api/resolve", h.handleResolve)
+	protected.HandleFunc("/api/download", h.handleDownload)
+	protected.HandleFunc("/api/download-bundle", h.handleDownloadBundle)
 	mux.Handle("/api/", h.Auth.Middleware(protected))
 }
 

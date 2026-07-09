@@ -204,6 +204,40 @@ function lolit() {
             try { return JSON.parse(this.fileDetail.kicad_diff); } catch (e) { return null; }
         },
 
+        // Downloads always resolve LFS-backed binaries (SLDPRT/STEP/...) to
+        // their real content server-side -- the browser never sees a Git
+        // LFS pointer file.
+        async downloadFile(url, suggestedName) {
+            try {
+                const res = await fetch(url, { headers: { Authorization: 'Bearer ' + this.token } });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    alert('ダウンロードに失敗しました: ' + (data.error || res.status));
+                    return;
+                }
+                const blob = await res.blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = suggestedName;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            } catch (e) {
+                alert('サーバーに接続できませんでした');
+            }
+        },
+
+        downloadVersion(path, version) {
+            if (!version) return;
+            const url = `/api/download?repo=${encodeURIComponent(this.repo)}&path=${encodeURIComponent(path)}&version=${encodeURIComponent(version)}`;
+            this.downloadFile(url, path.split('/').pop());
+        },
+
+        downloadBundle(path, version) {
+            if (!version) return;
+            const url = `/api/download-bundle?repo=${encodeURIComponent(this.repo)}&path=${encodeURIComponent(path)}&version=${encodeURIComponent(version)}`;
+            this.downloadFile(url, path.split('/').pop() + '-bundle.zip');
+        },
+
         async toggleLock(f) {
             const lock = !f.locked_by;
             const res = await this.api('/api/lock', {

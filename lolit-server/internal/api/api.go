@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/lolit/lolit-server/internal/auth"
 	"github.com/lolit/lolit-server/internal/db"
 	"github.com/lolit/lolit-server/internal/gitutil"
 	"github.com/lolit/lolit-server/internal/search"
@@ -16,19 +17,40 @@ type Handler struct {
 	Search   *search.Engine
 	Hub      *ws.Hub
 	RepoRoot string
+	Auth     *auth.Service
+
+	// Used by the browser-upload flow to push through Gitea's own git HTTP
+	// endpoint on the uploading user's behalf.
+	DataDir   string
+	GiteaURL  string
+	GiteaUser string
+	GiteaPass string
 }
 
+// Register wires up every /api/* route. Most require an authenticated
+// session; a couple (login, and register while zero accounts exist) must
+// stay reachable without one.
 func (h *Handler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("/api/files", h.handleFiles)
-	mux.HandleFunc("/api/file", h.handleFileDetail)
-	mux.HandleFunc("/api/commits", h.handleCommits)
-	mux.HandleFunc("/api/locks", h.handleLocks)
-	mux.HandleFunc("/api/lock", h.handleLock)
-	mux.HandleFunc("/api/search", h.handleSearch)
-	mux.HandleFunc("/api/releases", h.handleReleases)
-	mux.HandleFunc("/api/metadata", h.handleMetadata)
-	mux.HandleFunc("/api/kicad-diff", h.handleKiCadDiff)
-	mux.HandleFunc("/api/history", h.handleHistory)
+	mux.HandleFunc("/api/auth/login", h.handleLogin)
+	mux.HandleFunc("/api/auth/logout", h.handleLogout)
+	mux.Handle("/api/auth/register", h.Auth.OptionalMiddleware(http.HandlerFunc(h.handleRegister)))
+
+	protected := http.NewServeMux()
+	protected.HandleFunc("/api/auth/me", h.handleMe)
+	protected.HandleFunc("/api/users", auth.RequireAdmin(h.handleUsers))
+	protected.HandleFunc("/api/repos", h.handleRepos)
+	protected.HandleFunc("/api/files", h.handleFiles)
+	protected.HandleFunc("/api/file", h.handleFileDetail)
+	protected.HandleFunc("/api/commits", h.handleCommits)
+	protected.HandleFunc("/api/locks", h.handleLocks)
+	protected.HandleFunc("/api/lock", h.handleLock)
+	protected.HandleFunc("/api/search", h.handleSearch)
+	protected.HandleFunc("/api/releases", h.handleReleases)
+	protected.HandleFunc("/api/metadata", h.handleMetadata)
+	protected.HandleFunc("/api/kicad-diff", h.handleKiCadDiff)
+	protected.HandleFunc("/api/history", h.handleHistory)
+	protected.HandleFunc("/api/upload", h.handleUpload)
+	mux.Handle("/api/", h.Auth.Middleware(protected))
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {

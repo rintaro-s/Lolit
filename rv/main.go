@@ -49,6 +49,12 @@ func main() {
 		runRelease(args)
 	case "doctor":
 		runDoctor()
+	case "login":
+		runLogin(args)
+	case "logout":
+		runLogout()
+	case "whoami":
+		runWhoami()
 	case "version", "--version", "-v":
 		fmt.Println("rv", version)
 	default:
@@ -73,6 +79,9 @@ Usage:
   rv search <query>          # search metadata server
   rv release <tag>           # create a release tag
   rv doctor                  # check git/git-lfs and server connectivity
+  rv login [username]        # log in to the Lolit metadata server
+  rv logout                  # forget saved credentials
+  rv whoami                  # show the currently logged-in user
 
 Environment:
   LOLIT_SERVER    Metadata server URL (default http://localhost:8080)
@@ -183,7 +192,9 @@ func runLock(args []string, lock bool) {
 		return
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
+	if resp.StatusCode == http.StatusUnauthorized {
+		fmt.Fprintln(os.Stderr, "warning: not logged in to the metadata server; run `rv login` so locks show up in the WebUI")
+	} else if resp.StatusCode >= 300 {
 		fmt.Fprintf(os.Stderr, "warning: metadata server returned %s\n", resp.Status)
 	}
 }
@@ -210,13 +221,22 @@ func runSearch(args []string) {
 		fmt.Fprintln(os.Stderr, "usage: rv search <query>")
 		os.Exit(1)
 	}
-	u := fmt.Sprintf("%s/api/search?%s", serverURL(), url.Values{"q": {q}}.Encode())
-	resp, err := httpClient.Get(u)
+	path := fmt.Sprintf("/api/search?%s", url.Values{"q": {q}}.Encode())
+	req, err := mustReq("GET", path, nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "search error:", err)
+		os.Exit(1)
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "search error:", err)
 		os.Exit(1)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		fmt.Fprintln(os.Stderr, "ログインしていません。`rv login` を実行してください。")
+		os.Exit(1)
+	}
 	io.Copy(os.Stdout, resp.Body)
 	fmt.Println()
 }
@@ -243,19 +263,22 @@ func runRelease(args []string) {
 	}
 	repo := currentRepoName()
 	body, _ := json.Marshal(map[string]string{"tag": tag, "commit": commit, "note": ""})
-	u := fmt.Sprintf("%s/api/releases?%s", serverURL(), url.Values{"repo": {repo}}.Encode())
-	req, err := http.NewRequest("POST", u, bytes.NewReader(body))
+	path := fmt.Sprintf("/api/releases?%s", url.Values{"repo": {repo}}.Encode())
+	req, err := mustReq("POST", path, bytes.NewReader(body))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "release register:", err)
 		os.Exit(1)
 	}
-	req.Header.Set("Content-Type", "application/json")
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "release register:", err)
 		os.Exit(1)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		fmt.Fprintln(os.Stderr, "ログインしていません。`rv login` を実行してください。")
+		os.Exit(1)
+	}
 	if resp.StatusCode >= 300 {
 		fmt.Fprintf(os.Stderr, "release register: server returned %s\n", resp.Status)
 		os.Exit(1)
@@ -293,6 +316,12 @@ func runDoctor() {
 	server := serverURL()
 	_, err = httpGetOK(server + "/healthz")
 	check(fmt.Sprintf("Lolit metadata server reachable (%s)", server), err, "check LOLIT_SERVER and that lolit-server is running")
+
+	if authToken() == "" {
+		check("logged in to Lolit", fmt.Errorf("not logged in"), "run `rv login`")
+	} else {
+		check("logged in to Lolit", nil, "")
+	}
 
 	if !ok {
 		os.Exit(1)
@@ -357,6 +386,9 @@ func mustReq(method, path string, body io.Reader) (*http.Request, error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "rv/"+version)
+	if token := authToken(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	return req, nil
 }
 

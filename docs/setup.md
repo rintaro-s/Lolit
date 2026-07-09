@@ -74,15 +74,23 @@ go build -o lolit-server .
 | `LOLIT_DATA_DIR` | SQLite / インデックス保存先 | `/var/lib/lolit` |
 | `LOLIT_REPOS_ROOT` | Gitea の bare repo ルート | `/var/lib/gitea/data/gitea-repositories` |
 | `LOLIT_GITEA_URL` | Gitea URL | `http://localhost:3000` |
+| `LOLIT_GITEA_USER` / `LOLIT_GITEA_PASS` | Gitea 管理者アカウント。WebUI からのブラウザアップロードが、このアカウントで代理pushする | 未設定（アップロード機能は無効化） |
 | `LOLIT_WEBHOOK_SECRET` | Webhook 署名検証用シークレット（後述） | 未設定（検証なし） |
+| `LOLIT_JWT_SECRET` | WebUI/API のログインセッション署名鍵 | 未設定（安全でないデフォルト値。本番では必ず設定） |
 
 起動:
 
 ```bash
 export LOLIT_DATA_DIR=/mnt/lolit-storage/lolit
 export LOLIT_REPOS_ROOT=/var/lib/gitea/data/gitea-repositories
+export LOLIT_GITEA_USER=gitea_admin
+export LOLIT_GITEA_PASS=xxxxxxxx
+export LOLIT_JWT_SECRET=$(openssl rand -hex 32)
 ./lolit-server
 ```
+
+`LOLIT_JWT_SECRET` を設定しないと、デフォルトの安全でない値でログインセッションが署名されます。
+ラズパイ以外からアクセスできる環境では必ず固有の値を設定してください。
 
 ### 2.4 Webhook の設定
 
@@ -118,6 +126,15 @@ WantedBy=multi-user.target
 sudo systemctl enable --now lolit-server
 ```
 
+### 2.6 最初のアカウント作成
+
+Lolit の WebUI/API はGiteaとは別に、独自の軽量なアカウント（ログイン・権限管理用）を持ちます。
+サーバー起動直後はアカウントが1つも存在しないため、最初にアクセスした人がそのまま管理者になります。
+
+`http://raspberrypi.local:8080` を開くと「管理者アカウントの作成」画面が表示されるので、
+ユーザー名・パスワードを入力して作成してください。以降のメンバー追加は、WebUIの「メンバー」タブ
+（管理者のみ表示）から行います。
+
 ## 3. クライアントのセットアップ
 
 ### 3.1 rv CLI
@@ -128,7 +145,11 @@ go build -o rv .
 # Windows の場合: go build -o rv.exe .
 ```
 
-`rv` を PATH の通った場所に配置。
+`rv` を PATH の通った場所に配置。まず Lolit アカウントにログインします（WebUIで作成したユーザー名/パスワード）。
+
+```bash
+rv login
+```
 
 ```bash
 rv clone team/robot2026
@@ -139,8 +160,8 @@ rv push
 rv lock arm_link1.SLDPRT
 ```
 
-セットアップ後の動作確認には `rv doctor` が便利です。git / git-lfs のインストール状況と、
-Gitea・Lolit メタデータサーバへの疎通を一括でチェックします。
+セットアップ後の動作確認には `rv doctor` が便利です。git / git-lfs のインストール状況、
+Gitea・Lolit メタデータサーバへの疎通、ログイン状態を一括でチェックします。
 
 ```bash
 rv doctor
@@ -148,8 +169,12 @@ rv doctor
 
 ### 3.2 WebUI
 
-ブラウザで `http://raspberrypi.local:8080` を開く。
-初回は設定ボタンからリポジトリ名を `team/robot2026` などに設定する。
+ブラウザで `http://raspberrypi.local:8080` を開き、Lolit アカウントでログインする
+（初回のみ管理者アカウントの作成画面が出ます）。左のリポジトリ一覧はGiteaから自動的に検出されるため、
+リポジトリ名を手入力する必要はありません。
+
+Git を使ったことがない人は、ログイン後に「コード」タブを開き、ファイル（またはフォルダ）を
+ドラッグ&ドロップするだけでアップロードできます。裏側では自動的にコミットが作られ、push されます。
 
 ### 3.3 SolidWorks Add-in
 

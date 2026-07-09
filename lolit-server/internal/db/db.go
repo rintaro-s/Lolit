@@ -89,6 +89,15 @@ CREATE TABLE IF NOT EXISTS releases (
     UNIQUE(repo, tag)
 );
 
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    display_name TEXT,
+    role TEXT NOT NULL DEFAULT 'member',
+    created_at INTEGER
+);
+
 CREATE INDEX IF NOT EXISTS idx_files_repo ON files(repo);
 CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
 CREATE INDEX IF NOT EXISTS idx_commits_repo ON commits(repo);
@@ -301,6 +310,92 @@ func (s *Store) ListReleases(repo string) ([]Release, error) {
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// User accounts (Lolit's own lightweight accounts, separate from Gitea's:
+// they authenticate the WebUI/API and attribute locks, uploads and admin
+// actions to a person, while Gitea keeps owning raw git/LFS auth).
+
+type User struct {
+	ID           int64  `json:"id"`
+	Username     string `json:"username"`
+	PasswordHash string `json:"-"`
+	DisplayName  string `json:"display_name"`
+	Role         string `json:"role"`
+	CreatedAt    int64  `json:"created_at"`
+}
+
+const (
+	RoleAdmin  = "admin"
+	RoleMember = "member"
+)
+
+func (s *Store) CountUsers() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n)
+	return n, err
+}
+
+func (s *Store) CreateUser(username, passwordHash, displayName, role string, createdAt int64) (int64, error) {
+	res, err := s.db.Exec(`INSERT INTO users (username, password_hash, display_name, role, created_at) VALUES (?, ?, ?, ?, ?)`,
+		username, passwordHash, displayName, role, createdAt)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (s *Store) GetUserByUsername(username string) (*User, error) {
+	row := s.db.QueryRow(`SELECT id, username, password_hash, display_name, role, created_at FROM users WHERE username=?`, username)
+	u := &User{}
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.Role, &u.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+func (s *Store) GetUserByID(id int64) (*User, error) {
+	row := s.db.QueryRow(`SELECT id, username, password_hash, display_name, role, created_at FROM users WHERE id=?`, id)
+	u := &User{}
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.Role, &u.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+func (s *Store) ListUsers() ([]User, error) {
+	rows, err := s.db.Query(`SELECT id, username, password_hash, display_name, role, created_at FROM users ORDER BY username`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []User
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.Role, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) SetUserRole(id int64, role string) error {
+	_, err := s.db.Exec(`UPDATE users SET role=? WHERE id=?`, role, id)
+	return err
+}
+
+func (s *Store) DeleteUser(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM users WHERE id=?`, id)
+	return err
 }
 
 // Exec exposes raw exec for migrations/tests.

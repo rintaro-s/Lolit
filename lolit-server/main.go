@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lolit/lolit-server/internal/api"
+	"github.com/lolit/lolit-server/internal/auth"
 	"github.com/lolit/lolit-server/internal/config"
 	"github.com/lolit/lolit-server/internal/db"
 	"github.com/lolit/lolit-server/internal/search"
@@ -32,6 +33,12 @@ func main() {
 	if cfg.WebhookSecret == "" {
 		log.Println("warning: LOLIT_WEBHOOK_SECRET is not set; /webhook accepts unauthenticated requests")
 	}
+	if cfg.JWTSecret == "change-me-in-production" {
+		log.Println("warning: LOLIT_JWT_SECRET is not set; using an insecure default. Set it before exposing this server beyond localhost.")
+	}
+	if cfg.GiteaAdminPass == "" {
+		log.Println("warning: LOLIT_GITEA_PASS is not set; the browser upload feature will be disabled")
+	}
 
 	store, err := db.New(cfg.DBPath)
 	if err != nil {
@@ -46,6 +53,7 @@ func main() {
 	defer idx.Close()
 
 	hub := ws.NewHub()
+	authService := auth.New(store, cfg.JWTSecret)
 
 	webHandler := &webhook.Handler{
 		Store:         store,
@@ -56,17 +64,22 @@ func main() {
 	}
 
 	apiHandler := &api.Handler{
-		Store:    store,
-		Search:   idx,
-		Hub:      hub,
-		RepoRoot: cfg.ReposRoot,
+		Store:     store,
+		Search:    idx,
+		Hub:       hub,
+		RepoRoot:  cfg.ReposRoot,
+		Auth:      authService,
+		DataDir:   cfg.DataDir,
+		GiteaURL:  cfg.GiteaURL,
+		GiteaUser: cfg.GiteaAdminUser,
+		GiteaPass: cfg.GiteaAdminPass,
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", serveIndex)
 	mux.Handle("/static/", http.FileServer(getWebFS()))
 	mux.HandleFunc("/healthz", handleHealthz)
-	mux.HandleFunc("/dashboard-stats", apiHandler.DashboardStats)
+	mux.Handle("/dashboard-stats", authService.Middleware(http.HandlerFunc(apiHandler.DashboardStats)))
 	mux.Handle("/ws", hub)
 	mux.Handle("/webhook", webHandler)
 	apiHandler.Register(mux)

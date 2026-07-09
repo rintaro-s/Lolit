@@ -6,7 +6,7 @@ server:
 	cd lolit-server && go build -o lolit-server .
 
 cli:
-	cd rv && go build -o rv .
+	cd rv && go build -o loli .
 
 plugins:
 	@echo "SolidWorks Add-in: build in Visual Studio with .NET Framework 4.8"
@@ -17,4 +17,4 @@ test:
 	cd rv && go test ./...
 
 clean:
-	rm -f lolit-server/lolit-server rv/rv
+	rm -f lolit-server/lolit-server rv/loli

@@ -56,7 +56,7 @@ func main() {
 	case "whoami":
 		runWhoami()
 	case "version", "--version", "-v":
-		fmt.Println("rv", version)
+		fmt.Println("loli", version)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 		printUsage()
@@ -65,23 +65,23 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println(`rv - Lolit CLI wrapper around Git / Git LFS
+	fmt.Println(`loli - Lolit CLI wrapper around Git / Git LFS
 
 Usage:
-  rv clone <repo>            # git clone wrapper (from Lolit Gitea)
-  rv commit -m "message"     # git add . && git commit
-  rv push                    # git push (with LFS)
-  rv pull                    # git pull (with LFS)
-  rv lock <file>             # git lfs lock <file>
-  rv unlock <file>           # git lfs unlock <file>
-  rv locks                   # list current locks
-  rv history <file>          # git log --follow <file>
-  rv search <query>          # search metadata server
-  rv release <tag>           # create a release tag
-  rv doctor                  # check git/git-lfs and server connectivity
-  rv login [username]        # log in to the Lolit metadata server
-  rv logout                  # forget saved credentials
-  rv whoami                  # show the currently logged-in user
+  loli clone <repo>            # git clone wrapper (from Lolit Gitea)
+  loli commit -m "message"     # git add . && git commit
+  loli push                    # git push (with LFS)
+  loli pull                    # git pull (with LFS)
+  loli lock <file>             # git lfs lock <file>
+  loli unlock <file>           # git lfs unlock <file>
+  loli locks                   # list current locks
+  loli history <file>          # git log --follow <file>
+  loli search <query>          # search metadata server
+  loli release <tag>           # create a release tag
+  loli doctor                  # check git/git-lfs and server connectivity
+  loli login [username]        # log in to the Lolit metadata server
+  loli logout                  # forget saved credentials
+  loli whoami                  # show the currently logged-in user
 
 Environment:
   LOLIT_SERVER    Metadata server URL (default http://localhost:8080)
@@ -105,7 +105,7 @@ func gitOut(args ...string) (string, error) {
 
 func runClone(args []string) {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: rv clone <repo>")
+		fmt.Fprintln(os.Stderr, "usage: loli clone <repo>")
 		os.Exit(1)
 	}
 	repo := args[0]
@@ -127,7 +127,7 @@ func runCommit(args []string) {
 		}
 	}
 	if msg == "" {
-		fmt.Fprintln(os.Stderr, "usage: rv commit -m \"message\"")
+		fmt.Fprintln(os.Stderr, "usage: loli commit -m \"message\"")
 		os.Exit(1)
 	}
 	if err := git("add", "."); err != nil {
@@ -158,7 +158,7 @@ func runPull() {
 
 func runLock(args []string, lock bool) {
 	if len(args) < 1 {
-		fmt.Fprintf(os.Stderr, "usage: rv %s <file>\n", map[bool]string{true: "lock", false: "unlock"}[lock])
+		fmt.Fprintf(os.Stderr, "usage: loli %s <file>\n", map[bool]string{true: "lock", false: "unlock"}[lock])
 		os.Exit(1)
 	}
 	file := args[0]
@@ -193,7 +193,7 @@ func runLock(args []string, lock bool) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusUnauthorized {
-		fmt.Fprintln(os.Stderr, "warning: not logged in to the metadata server; run `rv login` so locks show up in the WebUI")
+		fmt.Fprintln(os.Stderr, "warning: not logged in to the metadata server; run `loli login` so locks show up in the WebUI")
 	} else if resp.StatusCode >= 300 {
 		fmt.Fprintf(os.Stderr, "warning: metadata server returned %s\n", resp.Status)
 	}
@@ -207,7 +207,7 @@ func runLocks() {
 
 func runHistory(args []string) {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: rv history <file>")
+		fmt.Fprintln(os.Stderr, "usage: loli history <file>")
 		os.Exit(1)
 	}
 	if err := git("log", "--follow", args[0]); err != nil {
@@ -218,7 +218,7 @@ func runHistory(args []string) {
 func runSearch(args []string) {
 	q := strings.Join(args, " ")
 	if q == "" {
-		fmt.Fprintln(os.Stderr, "usage: rv search <query>")
+		fmt.Fprintln(os.Stderr, "usage: loli search <query>")
 		os.Exit(1)
 	}
 	path := fmt.Sprintf("/api/search?%s", url.Values{"q": {q}}.Encode())
@@ -234,7 +234,7 @@ func runSearch(args []string) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusUnauthorized {
-		fmt.Fprintln(os.Stderr, "ログインしていません。`rv login` を実行してください。")
+		fmt.Fprintln(os.Stderr, "ログインしていません。`loli login` を実行してください。")
 		os.Exit(1)
 	}
 	io.Copy(os.Stdout, resp.Body)
@@ -243,7 +243,7 @@ func runSearch(args []string) {
 
 func runRelease(args []string) {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: rv release <tag>")
+		fmt.Fprintln(os.Stderr, "usage: loli release <tag>")
 		os.Exit(1)
 	}
 	tag := args[0]
@@ -276,7 +276,7 @@ func runRelease(args []string) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusUnauthorized {
-		fmt.Fprintln(os.Stderr, "ログインしていません。`rv login` を実行してください。")
+		fmt.Fprintln(os.Stderr, "ログインしていません。`loli login` を実行してください。")
 		os.Exit(1)
 	}
 	if resp.StatusCode >= 300 {
@@ -318,7 +318,7 @@ func runDoctor() {
 	check(fmt.Sprintf("Lolit metadata server reachable (%s)", server), err, "check LOLIT_SERVER and that lolit-server is running")
 
 	if authToken() == "" {
-		check("logged in to Lolit", fmt.Errorf("not logged in"), "run `rv login`")
+		check("logged in to Lolit", fmt.Errorf("not logged in"), "run `loli login`")
 	} else {
 		check("logged in to Lolit", nil, "")
 	}
@@ -385,7 +385,7 @@ func mustReq(method, path string, body io.Reader) (*http.Request, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "rv/"+version)
+	req.Header.Set("User-Agent", "loli/"+version)
 	if token := authToken(); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

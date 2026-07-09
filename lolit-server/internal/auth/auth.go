@@ -100,7 +100,7 @@ func (s *Service) ClearSessionCookie(w http.ResponseWriter) {
 }
 
 // tokenFromRequest extracts a session token from the Authorization header
-// (used by the rv CLI) or the session cookie (used by the browser WebUI).
+// (used by the loli CLI) or the session cookie (used by the browser WebUI).
 func tokenFromRequest(r *http.Request) string {
 	if auth := r.Header.Get("Authorization"); auth != "" {
 		if strings.HasPrefix(auth, "Bearer ") {

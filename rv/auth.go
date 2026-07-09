@@ -13,7 +13,7 @@ import (
 	"golang.org/x/term"
 )
 
-// credentials is what rv persists locally after `rv login`, so later
+// credentials is what loli persists locally after `loli login`, so later
 // commands (lock/search/release/upload) can authenticate without asking
 // again every time.
 type credentials struct {
@@ -95,7 +95,7 @@ func runLogin(args []string) {
 		line, _ := reader.ReadString('\n')
 		username = strings.TrimSpace(line)
 	}
-	// LOLIT_PASSWORD lets `rv login` run non-interactively (scripted setup,
+	// LOLIT_PASSWORD lets `loli login` run non-interactively (scripted setup,
 	// CI); otherwise prompt with the terminal's echo disabled.
 	password := os.Getenv("LOLIT_PASSWORD")
 	if password == "" {
@@ -168,7 +168,7 @@ func runWhoami() {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusUnauthorized {
-		fmt.Println("ログインしていません。`rv login` を実行してください。")
+		fmt.Println("ログインしていません。`loli login` を実行してください。")
 		os.Exit(1)
 	}
 	var user struct {

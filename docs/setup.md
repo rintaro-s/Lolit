@@ -74,6 +74,7 @@ go build -o lolit-server .
 | `LOLIT_DATA_DIR` | SQLite / インデックス保存先 | `/var/lib/lolit` |
 | `LOLIT_REPOS_ROOT` | Gitea の bare repo ルート | `/var/lib/gitea/data/gitea-repositories` |
 | `LOLIT_GITEA_URL` | Gitea URL | `http://localhost:3000` |
+| `LOLIT_WEBHOOK_SECRET` | Webhook 署名検証用シークレット（後述） | 未設定（検証なし） |
 
 起動:
 
@@ -87,6 +88,10 @@ export LOLIT_REPOS_ROOT=/var/lib/gitea/data/gitea-repositories
 
 Gitea のリポジトリ設定 → Webhooks → `http://raspberrypi.local:8080/webhook` を追加。
 トリガーは **Push events** のみで OK。
+
+`/webhook` は誰でも POST できてしまうため、`LOLIT_WEBHOOK_SECRET` を設定して署名検証を有効にすることを推奨します。
+Gitea 側の Webhook 設定画面の「Secret」に同じ値を入力すると、Gitea が `X-Gitea-Signature` ヘッダ（HMAC-SHA256）を付与するようになり、
+サーバーはそれを検証してから push を処理します。未設定の場合は検証なしで動作します（開発用途向け）。
 
 ### 2.5 systemd サービス化（推奨）
 
@@ -132,6 +137,13 @@ cd robot2026
 rv commit -m "アームリンクを更新"
 rv push
 rv lock arm_link1.SLDPRT
+```
+
+セットアップ後の動作確認には `rv doctor` が便利です。git / git-lfs のインストール状況と、
+Gitea・Lolit メタデータサーバへの疎通を一括でチェックします。
+
+```bash
+rv doctor
 ```
 
 ### 3.2 WebUI

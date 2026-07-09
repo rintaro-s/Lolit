@@ -1,12 +1,14 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Windows.Forms;
 using CADBooster.SolidDna;
-using SolidWorks.Interop.sldworks;
 
 namespace LolitSolidWorksAddin
 {
@@ -21,26 +23,38 @@ namespace LolitSolidWorksAddin
         private const string MetadataServerEnv = "LOLIT_SERVER";
         private const string RepoEnv = "LOLIT_REPO";
 
-        public override bool PreConnectToSolidWorks()
+        public override void PreConnectToSolidWorks()
         {
-            PluginTitle = "Lolit";
-            Description = "Lolit file sharing integration for SolidWorks";
-            return true;
+            SolidWorksAddInTitle = "Lolit";
+            SolidWorksAddInDescription = "Lolit file sharing integration for SolidWorks";
+        }
+
+        public override void PreLoadPlugIns()
+        {
         }
 
         public override void ApplicationStartup()
         {
-            // Add a simple toolbar command group.
-            var cmd = new CommandManagerItem("Lolit Commit", 0, OnCommitClicked)
+            var cmd = new CommandManagerItem
             {
+                Name = "Lolit Commit",
                 Tooltip = "Extract metadata and commit current document",
+                Hint = "Extract metadata and commit current document",
+                ImageIndex = 0,
+                VisibleForParts = true,
+                VisibleForAssemblies = true,
+                VisibleForDrawings = false,
+                OnClick = OnCommitClicked,
             };
-            SolidWorksEnvironment.IApplication.CommandManager.AddCommandGroup(new CommandManagerGroup("Lolit", new[] { cmd }));
+            CommandManager.CreateCommandMenu(
+                title: "Lolit",
+                id: 150_100,
+                commandManagerItems: new List<CommandManagerItem> { cmd });
         }
 
         private void OnCommitClicked()
         {
-            var model = SolidWorksEnvironment.IApplication.ActiveModel;
+            var model = SolidWorksEnvironment.Application.ActiveModel;
             if (model == null)
             {
                 MessageBox.Show("No active document.");
@@ -48,75 +62,81 @@ namespace LolitSolidWorksAddin
             }
 
             var meta = ExtractMetadata(model);
-            var json = JsonSerializer.Serialize(meta, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower });
-            var result = PostMetadata(model.FilePath, json);
+            var commit = CurrentCommitHash(Path.GetDirectoryName(model.FilePath));
+            var result = PostMetadata(model.FilePath, commit, meta);
             MessageBox.Show($"Metadata posted: {result}", "Lolit");
         }
 
         private SWMetadata ExtractMetadata(Model model)
         {
-            var part = model.UnsafeObject as IPartDoc;
-            var asm = model.UnsafeObject as IAssemblyDoc;
+            var massProps = model.MassProperties;
+            double mass = massProps?.Mass ?? 0;
+            double volume = massProps?.Volume ?? 0;
 
-            double mass = 0, volume = 0;
-            string material = "";
-            if (model.Extension != null)
+            var props = new Dictionary<string, object>();
+            foreach (var prop in model.Extension.CustomPropertyEditor("").GetCustomProperties())
             {
-                var massProp = model.Extension.CreateMassProperty();
-                if (massProp != null)
-                {
-                    mass = massProp.Mass;
-                    volume = massProp.Volume;
-                }
-            }
-
-            var props = new Dictionary<string, object?>();
-            var customProp = model.UnsafeObject.Extension?.CustomPropertyManager[""] ?? null;
-            if (customProp != null)
-            {
-                var names = (string[])customProp.GetNames();
-                if (names != null)
-                {
-                    foreach (var name in names)
-                    {
-                        customProp.Get2(name, out _, out string val);
-                        props[name] = val;
-                    }
-                }
+                props[prop.Name] = prop.ResolvedValue;
             }
 
             var bom = new List<BomItem>();
-            if (asm != null)
+            if (model.IsAssembly)
             {
-                var comp = asm.GetComponents(false) as object[];
-                if (comp != null)
+                var counts = new Dictionary<string, int>();
+                foreach (var (component, _depth) in model.Components())
                 {
-                    var counts = new Dictionary<string, int>();
-                    foreach (Component2 c in comp)
-                    {
-                        var name2 = c.GetPathName();
-                        counts[name2] = counts.GetValueOrDefault(name2) + 1;
-                    }
-                    foreach (var kv in counts)
-                    {
-                        bom.Add(new BomItem { Part = Path.GetFileName(kv.Key), Qty = kv.Value });
-                    }
+                    var name = Path.GetFileName(component.FilePath);
+                    counts[name] = counts.TryGetValue(name, out var n) ? n + 1 : 1;
+                }
+                foreach (var kv in counts)
+                {
+                    bom.Add(new BomItem { Part = kv.Key, Qty = kv.Value });
                 }
             }
 
             return new SWMetadata
             {
-                File = Path.GetFileName(model.FilePath) ?? "",
-                CommitHash = "", // filled by caller or git
-                MassKg = mass / 1000.0,
+                // SolidWorks mass properties are always expressed in SI base units (kg, m^3).
+                MassKg = mass,
                 VolumeMm3 = volume * 1e9,
-                Material = material,
+                Material = "",
                 BOM = bom,
                 CustomProperties = props
             };
         }
 
-        private string PostMetadata(string filePath, string json)
+        /// <summary>
+        /// Resolves the current git commit hash for the repo containing the
+        /// active document, so metadata posted here lines up with the same
+        /// commit the Gitea push webhook will later process. Returns "" if
+        /// git isn't available or the file isn't inside a repo yet.
+        /// </summary>
+        private static string CurrentCommitHash(string workingDirectory)
+        {
+            if (string.IsNullOrEmpty(workingDirectory))
+                return "";
+            try
+            {
+                var psi = new ProcessStartInfo("git", "rev-parse HEAD")
+                {
+                    WorkingDirectory = workingDirectory,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                using var proc = Process.Start(psi);
+                var output = proc.StandardOutput.ReadToEnd().Trim();
+                proc.WaitForExit(5000);
+                return proc.ExitCode == 0 ? output : "";
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private static string PostMetadata(string filePath, string commitHash, SWMetadata meta)
         {
             var server = Environment.GetEnvironmentVariable(MetadataServerEnv) ?? "http://localhost:8080";
             var repo = Environment.GetEnvironmentVariable(RepoEnv) ?? "team/robot2026";
@@ -125,8 +145,8 @@ namespace LolitSolidWorksAddin
             {
                 repo,
                 file,
-                commit_hash = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(),
-                metadata = json
+                commit_hash = commitHash,
+                metadata = meta,
             };
             var body = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
             try
@@ -142,20 +162,33 @@ namespace LolitSolidWorksAddin
         }
     }
 
+    // Property names are pinned with JsonPropertyName so they line up with
+    // lolit-server's db.SWMetadata json tags (mass_kg, volume_mm3, ...)
+    // regardless of System.Text.Json's default naming policy.
     public class SWMetadata
     {
-        public string File { get; set; } = "";
-        public string CommitHash { get; set; } = "";
+        [JsonPropertyName("mass_kg")]
         public double MassKg { get; set; }
+
+        [JsonPropertyName("volume_mm3")]
         public double VolumeMm3 { get; set; }
+
+        [JsonPropertyName("material")]
         public string Material { get; set; } = "";
+
+        [JsonPropertyName("bom")]
         public List<BomItem> BOM { get; set; } = new();
-        public Dictionary<string, object?> CustomProperties { get; set; } = new();
+
+        [JsonPropertyName("custom_properties")]
+        public Dictionary<string, object> CustomProperties { get; set; } = new();
     }
 
     public class BomItem
     {
+        [JsonPropertyName("part")]
         public string Part { get; set; } = "";
+
+        [JsonPropertyName("qty")]
         public int Qty { get; set; }
     }
 }

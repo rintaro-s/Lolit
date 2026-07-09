@@ -7,16 +7,17 @@ import (
 
 // Config holds server configuration.
 type Config struct {
-	ListenAddr      string
-	DataDir         string
-	DBPath          string
-	IndexPath       string
-	GiteaURL        string
-	GiteaAdminUser  string
-	GiteaAdminPass  string
-	JWTSecret       string
-	ReposRoot       string // path where Gitea stores bare repos (for metadata extraction)
-	PreviewDir      string
+	ListenAddr     string
+	DataDir        string
+	DBPath         string
+	IndexPath      string
+	GiteaURL       string
+	GiteaAdminUser string
+	GiteaAdminPass string
+	JWTSecret      string
+	WebhookSecret  string // if set, incoming Gitea webhooks must present a matching HMAC signature
+	ReposRoot      string // path where Gitea stores bare repos (for metadata extraction)
+	PreviewDir     string
 }
 
 func Load() Config {
@@ -30,6 +31,7 @@ func Load() Config {
 		GiteaAdminUser: getEnv("LOLIT_GITEA_USER", "gitea_admin"),
 		GiteaAdminPass: getEnv("LOLIT_GITEA_PASS", ""),
 		JWTSecret:      getEnv("LOLIT_JWT_SECRET", "change-me-in-production"),
+		WebhookSecret:  getEnv("LOLIT_WEBHOOK_SECRET", ""),
 		ReposRoot:      getEnv("LOLIT_REPOS_ROOT", "/var/lib/gitea/data/gitea-repositories"),
 		PreviewDir:     filepath.Join(dataDir, "previews"),
 	}

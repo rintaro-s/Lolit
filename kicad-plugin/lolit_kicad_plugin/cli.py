@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 
-from .diff import diff_components, extract_components, components_from_git
+from .diff import diff_components, extract_components, components_from_git, git_head_commit
 from .metadata import post_kicad_diff
 
 
@@ -23,8 +22,11 @@ def main() -> None:
     p_diff.add_argument("head")
     p_diff.add_argument("--repo", default=".")
 
-    p_post = sub.add_parser("post", help="Post component diff to metadata server")
+    p_post = sub.add_parser(
+        "post", help="Diff working tree against HEAD and post the result to the metadata server"
+    )
     p_post.add_argument("path")
+    p_post.add_argument("--repo", default=".")
 
     args = parser.parse_args()
 
@@ -41,11 +43,19 @@ def main() -> None:
         print(result)
 
     elif args.cmd == "post":
-        comps = extract_components(args.path)
+        rel_path = os.path.relpath(args.path, args.repo)
+        head = git_head_commit(args.repo)
+        old = components_from_git(args.repo, "HEAD", rel_path)
+        new = extract_components(args.path)
+        diff = diff_components(old, new)
+
         server = os.environ.get("LOLIT_SERVER", "http://localhost:8080")
-        repo = os.environ.get("LOLIT_REPO", "team/robot2026")
-        post_kicad_diff(server, repo, Path(args.path).name, comps)
-        print("posted")
+        lolit_repo = os.environ.get("LOLIT_REPO", "team/robot2026")
+        post_kicad_diff(server, lolit_repo, rel_path, head, diff)
+        print(
+            f"posted diff for {rel_path}@{head[:8]}: "
+            f"+{len(diff['added'])} -{len(diff['removed'])} ~{len(diff['changed'])}"
+        )
 
 
 if __name__ == "__main__":

@@ -55,6 +55,12 @@ def diff_components(
     return {"added": added, "removed": removed, "changed": changed}
 
 
+def git_head_commit(repo: str) -> str:
+    """Return the current HEAD commit hash of `repo`."""
+    out = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo)
+    return out.decode("utf-8").strip()
+
+
 def components_from_git(repo: str, commit: str, path: str) -> dict[str, dict[str, Any]]:
     """Extract components from a file at a given git commit."""
     data = subprocess.check_output(["git", "show", f"{commit}:{path}"], cwd=repo)

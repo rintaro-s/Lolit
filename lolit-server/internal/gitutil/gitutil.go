@@ -14,8 +14,25 @@ type Repo struct {
 	Path string
 }
 
+// IsValidRepoName reports whether name is safe to use as a repo path segment,
+// i.e. it cannot escape ReposRoot via "..", absolute paths, or empty segments.
+func IsValidRepoName(name string) bool {
+	if name == "" || strings.Contains(name, "..") {
+		return false
+	}
+	for _, part := range strings.Split(name, "/") {
+		if part == "" {
+			return false
+		}
+	}
+	return !filepath.IsAbs(name)
+}
+
 func NewRepo(reposRoot, fullName string) *Repo {
 	// fullName like "owner/repo"
+	if !IsValidRepoName(fullName) {
+		return &Repo{Path: ""}
+	}
 	parts := strings.SplitN(fullName, "/", 2)
 	if len(parts) != 2 {
 		return &Repo{Path: filepath.Join(reposRoot, fullName+".git")}
@@ -24,6 +41,9 @@ func NewRepo(reposRoot, fullName string) *Repo {
 }
 
 func (r *Repo) Exists() bool {
+	if r.Path == "" {
+		return false
+	}
 	_, err := os.Stat(filepath.Join(r.Path, "HEAD"))
 	return err == nil
 }

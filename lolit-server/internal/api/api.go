@@ -27,6 +27,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/search", h.handleSearch)
 	mux.HandleFunc("/api/releases", h.handleReleases)
 	mux.HandleFunc("/api/metadata", h.handleMetadata)
+	mux.HandleFunc("/api/kicad-diff", h.handleKiCadDiff)
 	mux.HandleFunc("/api/history", h.handleHistory)
 }
 
@@ -71,10 +72,10 @@ func (h *Handler) handleFileDetail(w http.ResponseWriter, r *http.Request) {
 	kicadDiff, _ := h.Store.GetKiCadDiff(f.ID, f.LatestCommit)
 	preview, _ := h.Store.GetPreview(f.ID, f.LatestCommit)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"file":       f,
+		"file":        f,
 		"sw_metadata": swMeta,
-		"kicad_diff": kicadDiff,
-		"preview":    preview,
+		"kicad_diff":  kicadDiff,
+		"preview":     preview,
 	})
 }
 
@@ -139,8 +140,8 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request) {
 	var hits []map[string]interface{}
 	for _, hit := range res.Hits {
 		hits = append(hits, map[string]interface{}{
-			"id":    hit.ID,
-			"score": hit.Score,
+			"id":     hit.ID,
+			"score":  hit.Score,
 			"fields": hit.Fields,
 		})
 	}
@@ -188,10 +189,10 @@ func (h *Handler) handleMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Repo   string           `json:"repo"`
-		Path   string           `json:"file"`
-		Commit string           `json:"commit_hash"`
-		Meta   db.SWMetadata    `json:"metadata"`
+		Repo   string        `json:"repo"`
+		Path   string        `json:"file"`
+		Commit string        `json:"commit_hash"`
+		Meta   db.SWMetadata `json:"metadata"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -209,11 +210,49 @@ func (h *Handler) handleMetadata(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+// handleKiCadDiff accepts a component diff computed client-side (e.g. by the
+// KiCAD plugin before a push) so it shows up immediately instead of waiting
+// for the next Gitea webhook to trigger server-side diffing.
+func (h *Handler) handleKiCadDiff(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var req struct {
+		Repo   string      `json:"repo"`
+		Path   string      `json:"path"`
+		Commit string      `json:"commit"`
+		Diff   interface{} `json:"diff"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if req.Repo == "" || req.Path == "" || req.Commit == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "repo, path and commit required"})
+		return
+	}
+	fileID, err := h.Store.UpsertFile(req.Repo, req.Path, db.FileTypeFromPath(req.Path), req.Commit)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := h.Store.SaveKiCadDiff(fileID, req.Commit, req.Diff); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 	repoName := r.URL.Query().Get("repo")
 	path := r.URL.Query().Get("path")
 	if repoName == "" || path == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "repo and path required"})
+		return
+	}
+	if !gitutil.IsValidRepoName(repoName) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid repo name"})
 		return
 	}
 	repo := gitutil.NewRepo(h.RepoRoot, repoName)
@@ -233,7 +272,7 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	locks, _ := h.Store.ListLocks("")
 	commits, _ := h.Store.RecentCommits("", 5)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"lock_count": len(locks),
+		"lock_count":     len(locks),
 		"recent_commits": commits,
 	})
 }

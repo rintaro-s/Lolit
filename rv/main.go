@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,8 @@ import (
 )
 
 const version = "0.1.0"
+
+var httpClient = &http.Client{Timeout: 10 * time.Second}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -44,6 +47,8 @@ func main() {
 		runSearch(args)
 	case "release":
 		runRelease(args)
+	case "doctor":
+		runDoctor()
 	case "version", "--version", "-v":
 		fmt.Println("rv", version)
 	default:
@@ -67,9 +72,11 @@ Usage:
   rv history <file>          # git log --follow <file>
   rv search <query>          # search metadata server
   rv release <tag>           # create a release tag
+  rv doctor                  # check git/git-lfs and server connectivity
 
 Environment:
   LOLIT_SERVER    Metadata server URL (default http://localhost:8080)
+  LOLIT_GITEA_URL Gitea URL (default http://localhost:3000)
   LOLIT_REPO      Repository full name for search/release (default auto)`)
 }
 
@@ -155,7 +162,9 @@ func runLock(args []string, lock bool) {
 			os.Exit(1)
 		}
 	}
-	// Notify metadata server.
+	// Notify the metadata server so the WebUI reflects the lock immediately.
+	// This is best-effort: the Git LFS lock above is already authoritative,
+	// so a server hiccup here should warn, not fail the command.
 	repo := currentRepoName()
 	user, _ := gitOut("config", "user.name")
 	if user == "" {
@@ -163,7 +172,20 @@ func runLock(args []string, lock bool) {
 	}
 	body, _ := json.Marshal(map[string]string{"repo": repo, "path": file, "user": user})
 	method := map[bool]string{true: "POST", false: "DELETE"}[lock]
-	_, _ = http.DefaultClient.Do(mustReq(method, "/api/lock", bytes.NewReader(body)))
+	req, err := mustReq(method, "/api/lock", bytes.NewReader(body))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "warning: could not notify metadata server:", err)
+		return
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "warning: could not notify metadata server:", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		fmt.Fprintf(os.Stderr, "warning: metadata server returned %s\n", resp.Status)
+	}
 }
 
 func runLocks() {
@@ -188,7 +210,8 @@ func runSearch(args []string) {
 		fmt.Fprintln(os.Stderr, "usage: rv search <query>")
 		os.Exit(1)
 	}
-	resp, err := http.Get(fmt.Sprintf("%s/api/search?q=%s", serverURL(), urlEnc(q)))
+	u := fmt.Sprintf("%s/api/search?%s", serverURL(), url.Values{"q": {q}}.Encode())
+	resp, err := httpClient.Get(u)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "search error:", err)
 		os.Exit(1)
@@ -220,25 +243,85 @@ func runRelease(args []string) {
 	}
 	repo := currentRepoName()
 	body, _ := json.Marshal(map[string]string{"tag": tag, "commit": commit, "note": ""})
-	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/releases?repo=%s", serverURL(), urlEnc(repo)), bytes.NewReader(body))
+	u := fmt.Sprintf("%s/api/releases?%s", serverURL(), url.Values{"repo": {repo}}.Encode())
+	req, err := http.NewRequest("POST", u, bytes.NewReader(body))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "release register:", err)
+		os.Exit(1)
+	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "release register:", err)
 		os.Exit(1)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		fmt.Fprintf(os.Stderr, "release register: server returned %s\n", resp.Status)
+		os.Exit(1)
+	}
 	fmt.Println("released", tag)
 }
 
+// runDoctor checks the local toolchain and connectivity to Gitea/the Lolit
+// metadata server, so non-technical teammates get an actionable diagnosis
+// instead of a confusing failure deep inside some other command.
+func runDoctor() {
+	ok := true
+	check := func(label string, err error, hint string) {
+		if err != nil {
+			ok = false
+			fmt.Printf("[NG] %s: %v\n", label, err)
+			if hint != "" {
+				fmt.Printf("     -> %s\n", hint)
+			}
+			return
+		}
+		fmt.Printf("[OK] %s\n", label)
+	}
+
+	_, err := gitOut("--version")
+	check("git installed", err, "install git and ensure it's on PATH")
+
+	_, err = gitOut("lfs", "version")
+	check("git-lfs installed", err, "install git-lfs: https://git-lfs.com")
+
+	giteaURL := getEnv("LOLIT_GITEA_URL", "http://localhost:3000")
+	_, err = httpGetOK(giteaURL)
+	check(fmt.Sprintf("Gitea reachable (%s)", giteaURL), err, "check LOLIT_GITEA_URL and that Gitea is running")
+
+	server := serverURL()
+	_, err = httpGetOK(server + "/healthz")
+	check(fmt.Sprintf("Lolit metadata server reachable (%s)", server), err, "check LOLIT_SERVER and that lolit-server is running")
+
+	if !ok {
+		os.Exit(1)
+	}
+	fmt.Println("all checks passed")
+}
+
+func httpGetOK(url string) (int, error) {
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 500 {
+		return resp.StatusCode, fmt.Errorf("server error: %s", resp.Status)
+	}
+	return resp.StatusCode, nil
+}
+
+// currentRepoName returns the "owner/repo" full name Lolit uses to key
+// metadata, preferring LOLIT_REPO, then the last two path segments of the
+// origin remote, then a "team/<dir>" fallback.
 func currentRepoName() string {
 	if r := os.Getenv("LOLIT_REPO"); r != "" {
 		return r
 	}
 	origin, _ := gitOut("remote", "get-url", "origin")
-	origin = strings.TrimSuffix(origin, ".git")
-	if i := strings.LastIndex(origin, "/"); i >= 0 {
-		return origin[i+1:]
+	if name := repoNameFromOriginURL(origin); name != "" {
+		return name
 	}
 	// fallback: owner/repo from path
 	cwd, _ := os.Getwd()
@@ -246,23 +329,35 @@ func currentRepoName() string {
 	return "team/" + base
 }
 
+// repoNameFromOriginURL extracts "owner/repo" (the last two path segments)
+// from a git remote URL such as "http://host:3000/team/robot2026.git" or
+// "git@host:team/robot2026.git". Returns "" if it can't find two segments.
+func repoNameFromOriginURL(origin string) string {
+	origin = strings.TrimSuffix(strings.TrimSpace(origin), ".git")
+	origin = strings.TrimSuffix(origin, "/")
+	origin = strings.ReplaceAll(origin, ":", "/") // scp-like "git@host:owner/repo"
+	if origin == "" {
+		return ""
+	}
+	parts := strings.Split(origin, "/")
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[len(parts)-2] + "/" + parts[len(parts)-1]
+}
+
 func serverURL() string {
 	return strings.TrimSuffix(getEnv("LOLIT_SERVER", "http://localhost:8080"), "/")
 }
 
-func mustReq(method, path string, body io.Reader) *http.Request {
+func mustReq(method, path string, body io.Reader) (*http.Request, error) {
 	req, err := http.NewRequest(method, serverURL()+path, body)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "rv/"+version)
-	return req
-}
-
-func urlEnc(s string) string {
-	// Minimal URL encoding for query strings.
-	return strings.NewReplacer(" ", "%20", "&", "%26", "=", "%3D", "?", "%3F").Replace(s)
+	return req, nil
 }
 
 func getEnv(key, def string) string {
@@ -271,6 +366,3 @@ func getEnv(key, def string) string {
 	}
 	return def
 }
-
-// init ensures timestamp.
-var _ = time.Now()

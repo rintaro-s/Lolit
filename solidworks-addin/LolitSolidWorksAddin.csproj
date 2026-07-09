@@ -13,5 +13,7 @@
   <ItemGroup>
     <!-- Use local SolidDNA reference if available, otherwise NuGet fallback. -->
     <PackageReference Include="CADBooster.SolidDna" Version="4.0.0" />
+    <!-- net48 has no built-in System.Text.Json; it must be referenced explicitly. -->
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
   </ItemGroup>
 </Project>

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -354,12 +355,12 @@ type Release struct {
 	TS         int64  `json:"ts"`
 }
 
-// FileTypeFromPath guesses file type from extension.
+// FileTypeFromPath guesses file type from extension (case-insensitive).
 func FileTypeFromPath(path string) string {
 	ext := ""
 	for i := len(path) - 1; i >= 0; i-- {
 		if path[i] == '.' {
-			ext = path[i:]
+			ext = strings.ToLower(path[i:])
 			break
 		}
 		if path[i] == '/' {
@@ -375,9 +376,9 @@ func FileTypeFromPath(path string) string {
 		return "kicad_pcb"
 	case ".kicad_sch":
 		return "kicad_sch"
-	case ".step", ".STEP", ".stp", ".STP":
+	case ".step", ".stp":
 		return "step"
-	case ".stl", ".STL":
+	case ".stl":
 		return "stl"
 	default:
 		return "other"
